@@ -18,6 +18,7 @@ python3 player.py
 ```
 
 Use the **File → Open** menu to select an MKV file and control playback with the
-provided buttons and slider. You can mark segments of interest by pressing
-**Flag Start** and **Flag End** while the video plays. Each pair of flags will be
-added to the list below the slider.
+provided buttons and slider. Segments can be defined visually by dragging on the
+timeline under the slider. Each new segment appears in the list below and can be
+removed by double-clicking it on the timeline. The legacy **Flag Start** and
+**Flag End** buttons are also available if you prefer to set the times manually.
