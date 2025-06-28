@@ -8,6 +8,8 @@ class MKVPlayer:
         self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
         self.media = None
+        self.segments = []
+        self.segment_start = None
 
         root.title('MKV Player')
         root.geometry('800x600')
@@ -40,6 +42,19 @@ class MKVPlayer:
         self.play_button.pack(side=tk.LEFT)
         self.pause_button.pack(side=tk.LEFT)
 
+        self.flag_start_button = tk.Button(
+            self.controls,
+            text='Flag Start',
+            command=self.flag_start_time
+        )
+        self.flag_end_button = tk.Button(
+            self.controls,
+            text='Flag End',
+            command=self.flag_end_time
+        )
+        self.flag_start_button.pack(side=tk.LEFT)
+        self.flag_end_button.pack(side=tk.LEFT)
+
         self.scale = tk.Scale(
             self.controls,
             from_=0,
@@ -48,6 +63,9 @@ class MKVPlayer:
             command=self.seek
         )
         self.scale.pack(fill=tk.X, expand=1)
+
+        self.segment_list = tk.Listbox(root, height=4)
+        self.segment_list.pack(fill=tk.X)
 
         self.update_scale()
 
@@ -79,6 +97,29 @@ class MKVPlayer:
                 pos = self.player.get_position()
                 self.scale.set(int(pos * 1000))
         self.root.after(500, self.update_scale)
+
+    def flag_start_time(self):
+        if self.player.get_length() > 0:
+            self.segment_start = self.player.get_time()
+
+    def flag_end_time(self):
+        if self.player.get_length() > 0 and self.segment_start is not None:
+            end = self.player.get_time()
+            if end > self.segment_start:
+                self.segments.append((self.segment_start, end))
+                self.segment_list.insert(
+                    tk.END,
+                    f"{self.format_time(self.segment_start)} - {self.format_time(end)}"
+                )
+            self.segment_start = None
+
+    @staticmethod
+    def format_time(ms):
+        seconds = int(ms / 1000)
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+        return f"{h:02}:{m:02}:{s:02}"
 
 if __name__ == '__main__':
     root = tk.Tk()
