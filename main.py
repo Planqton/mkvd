@@ -2,6 +2,8 @@ import os
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+import threading
+import queue
 import vlc
 
 class VideoPlayer(tk.Tk):
@@ -61,6 +63,12 @@ class VideoPlayer(tk.Tk):
 
         self.segment_list = tk.Listbox(self)
         self.segment_list.pack(fill=tk.BOTH, expand=False)
+
+        # Log output for ffmpeg
+        self.log_text = tk.Text(self, height=8, state='disabled')
+        self.log_text.pack(fill=tk.BOTH, expand=False)
+        self.log_queue = queue.Queue()
+        self.after(100, self.process_log_queue)
 
         # Segment points
         self.start_point = None
@@ -131,6 +139,19 @@ class VideoPlayer(tk.Tk):
         for seg in self.segments:
             self.update_segment_rect(seg)
         self.after(self.update_interval, self.update_ui)
+
+    def append_log(self, text):
+        """Queue log text for display."""
+        self.log_queue.put(text)
+
+    def process_log_queue(self):
+        while not self.log_queue.empty():
+            msg = self.log_queue.get()
+            self.log_text.configure(state='normal')
+            self.log_text.insert(tk.END, msg)
+            self.log_text.see(tk.END)
+            self.log_text.configure(state='disabled')
+        self.after(100, self.process_log_queue)
 
     def set_start(self):
         if self.player.get_media() is None:
@@ -257,11 +278,14 @@ class VideoPlayer(tk.Tk):
         if not self.video_path or not self.segments:
             messagebox.showinfo("Export", "No segments to export")
             return
+        threading.Thread(target=self._export_worker, daemon=True).start()
+
+    def _export_worker(self):
         ffmpeg_dir = os.path.join(os.path.dirname(__file__), 'ffmpeg')
         exe = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
         ffmpeg_path = os.path.join(ffmpeg_dir, exe)
         if not os.path.exists(ffmpeg_path):
-            messagebox.showerror("Error", f"ffmpeg not found at {ffmpeg_path}")
+            self.append_log(f"ffmpeg not found at {ffmpeg_path}\n")
             return
         for seg in self.segments:
             start = seg['start'] / 1000
@@ -270,10 +294,14 @@ class VideoPlayer(tk.Tk):
             cmd = [ffmpeg_path, '-y', '-i', self.video_path,
                    '-ss', str(start), '-t', str(duration),
                    '-vn', '-acodec', 'mp3', outfile]
+            self.append_log("Running: " + " ".join(cmd) + "\n")
             try:
-                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                for line in proc.stdout:
+                    self.append_log(line)
+                proc.wait()
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to export {outfile}: {e}")
+                self.append_log(f"Failed to export {outfile}: {e}\n")
 
 
 if __name__ == "__main__":
