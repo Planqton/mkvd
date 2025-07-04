@@ -24,7 +24,7 @@ python main.py
 
 Use the **Load** button to open a video file. The slider and timeline update as the video plays.
 Mark a section with **Set Start** and **Set End**, then click **Add Segment** to store it.
-All segments appear in the list below the controls. They can be renamed with **Rename** and adjusted directly on the timeline by dragging or resizing the colored bars.
+All segments appear in the list below the controls. They can be renamed with **Rename**, edited by entering new start or end values in the fields under the list, and adjusted directly on the timeline by dragging or resizing the colored bars. When the mouse hovers over a segment edge the cursor changes to a left-right arrow so you know it can be resized.
 
 Click **Export** to save each segment as an MP3 file. A folder dialog will ask
 where to place the resulting files. The application expects an `ffmpeg`

@@ -34,6 +34,8 @@ class VideoPlayer(tk.Tk):
         self.timeline.bind('<Button-1>', self.on_timeline_click)
         self.timeline.bind('<B1-Motion>', self.on_timeline_drag)
         self.timeline.bind('<ButtonRelease-1>', self.on_timeline_release)
+        self.timeline.bind('<Motion>', self.on_timeline_motion)
+        self.timeline.bind('<Leave>', lambda e: self.timeline.config(cursor=''))
         self.playhead = self.timeline.create_line(0, 0, 0, 40, fill='red')
 
         # Segment management
@@ -91,6 +93,25 @@ class VideoPlayer(tk.Tk):
 
         self.segment_list = tk.Listbox(self)
         self.segment_list.pack(fill=tk.BOTH, expand=False)
+        self.segment_list.bind('<<ListboxSelect>>', self.on_segment_select)
+
+        # Entry fields to edit selected segment
+        edit = tk.Frame(self)
+        tk.Label(edit, text='Start:').pack(side=tk.LEFT)
+        self.start_entry = tk.Entry(edit, width=8, state='disabled')
+        self.start_entry.pack(side=tk.LEFT)
+        self.control_widgets.append(self.start_entry)
+
+        tk.Label(edit, text='End:').pack(side=tk.LEFT)
+        self.end_entry = tk.Entry(edit, width=8, state='disabled')
+        self.end_entry.pack(side=tk.LEFT)
+        self.control_widgets.append(self.end_entry)
+
+        self.update_btn = tk.Button(edit, text='Update', command=self.update_segment_times, state='disabled')
+        self.update_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.update_btn)
+
+        edit.pack(fill=tk.X)
 
         # Status during export
         self.export_status_var = tk.StringVar()
@@ -261,6 +282,45 @@ class VideoPlayer(tk.Tk):
         for seg in self.segments:
             self.segment_list.insert(tk.END, f"{seg['id']}: {seg['name']} {seg['start']/1000:.2f}s - {seg['end']/1000:.2f}s")
 
+    def on_segment_select(self, event=None):
+        sel = self.segment_list.curselection()
+        if not sel:
+            self.start_entry.configure(state='disabled')
+            self.end_entry.configure(state='disabled')
+            self.update_btn.configure(state='disabled')
+            return
+        index = sel[0]
+        seg = self.segments[index]
+        self.start_entry.configure(state='normal')
+        self.end_entry.configure(state='normal')
+        self.update_btn.configure(state='normal')
+        self.start_entry.delete(0, tk.END)
+        self.start_entry.insert(0, f"{seg['start']/1000:.2f}")
+        self.end_entry.delete(0, tk.END)
+        self.end_entry.insert(0, f"{seg['end']/1000:.2f}")
+
+    def update_segment_times(self):
+        if self.exporting:
+            return
+        sel = self.segment_list.curselection()
+        if not sel:
+            return
+        index = sel[0]
+        seg = self.segments[index]
+        try:
+            start = float(self.start_entry.get()) * 1000
+            end = float(self.end_entry.get()) * 1000
+            if end <= start:
+                raise ValueError
+        except Exception:
+            messagebox.showerror("Error", "Invalid start/end times")
+            return
+        seg['start'] = max(0, start)
+        seg['end'] = max(seg['start'] + 1, end)
+        self.update_segment_rect(seg)
+        self.update_segment_list()
+        self.segment_list.selection_set(index)
+
     def draw_segment(self, seg):
         x1 = seg['start'] / max(self.player.get_length(), 1) * self.timeline_width
         x2 = seg['end'] / max(self.player.get_length(), 1) * self.timeline_width
@@ -325,6 +385,17 @@ class VideoPlayer(tk.Tk):
             return
         self.active_segment = None
         self.drag_mode = None
+
+    def on_timeline_motion(self, event):
+        if self.exporting:
+            return
+        seg = self.find_segment_at(event.x)
+        cursor = ''
+        if seg:
+            x1, _, x2, _ = self.timeline.coords(seg['rect'])
+            if abs(event.x - x1) < 5 or abs(event.x - x2) < 5:
+                cursor = 'sb_h_double_arrow'
+        self.timeline.config(cursor=cursor)
 
     def export_segments(self):
         if not self.video_path or not self.segments:
