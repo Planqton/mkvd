@@ -2,6 +2,7 @@ import os
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+from tkinter.scrolledtext import ScrolledText
 import threading
 import queue
 import vlc
@@ -65,7 +66,7 @@ class VideoPlayer(tk.Tk):
         self.segment_list.pack(fill=tk.BOTH, expand=False)
 
         # Log output for ffmpeg
-        self.log_text = tk.Text(self, height=8, state='disabled')
+        self.log_text = ScrolledText(self, height=8, state='disabled')
         self.log_text.pack(fill=tk.BOTH, expand=False)
         self.log_queue = queue.Queue()
         self.after(100, self.process_log_queue)

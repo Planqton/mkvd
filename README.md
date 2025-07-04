@@ -30,6 +30,7 @@ Click **Export** to save each segment as an MP3 file. The application expects
 an `ffmpeg` directory next to `main.py` containing the `ffmpeg` executable
 (e.g. `ffmpeg/ffmpeg.exe` on Windows).
 
-During export, ffmpeg's output is displayed in the log panel at the bottom of
-the window so you can follow the conversion progress.
+The ffmpeg output appears in a dedicated log text field at the bottom of the
+window. Scroll if necessary to view the full messages.
+
 
