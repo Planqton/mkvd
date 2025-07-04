@@ -1,4 +1,5 @@
 import os
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import vlc
@@ -37,6 +38,7 @@ class VideoPlayer(tk.Tk):
         self.active_segment = None
         self.drag_mode = None
         self.drag_offset = 0
+        self.video_path = None
 
         # Control buttons
         controls = tk.Frame(self)
@@ -49,6 +51,7 @@ class VideoPlayer(tk.Tk):
         tk.Button(controls, text="Set End", command=self.set_end).pack(side=tk.LEFT)
         tk.Button(controls, text="Add Segment", command=self.add_segment).pack(side=tk.LEFT)
         tk.Button(controls, text="Rename", command=self.rename_segment).pack(side=tk.LEFT)
+        tk.Button(controls, text="Export", command=self.export_segments).pack(side=tk.LEFT)
         controls.pack(fill=tk.X)
 
         # Segment info list
@@ -91,6 +94,7 @@ class VideoPlayer(tk.Tk):
                     self.timeline.delete(seg['rect'])
             self.segments.clear()
             self.segment_list.delete(0, tk.END)
+            self.video_path = path
         else:
             messagebox.showerror("Error", f"File not found: {path}")
 
@@ -248,6 +252,29 @@ class VideoPlayer(tk.Tk):
     def on_timeline_release(self, event):
         self.active_segment = None
         self.drag_mode = None
+
+    def export_segments(self):
+        if not self.video_path or not self.segments:
+            messagebox.showinfo("Export", "No segments to export")
+            return
+        ffmpeg_dir = os.path.join(os.path.dirname(__file__), 'ffmpeg')
+        exe = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+        ffmpeg_path = os.path.join(ffmpeg_dir, exe)
+        if not os.path.exists(ffmpeg_path):
+            messagebox.showerror("Error", f"ffmpeg not found at {ffmpeg_path}")
+            return
+        for seg in self.segments:
+            start = seg['start'] / 1000
+            duration = (seg['end'] - seg['start']) / 1000
+            outfile = f"{seg['name']}.mp3"
+            cmd = [ffmpeg_path, '-y', '-i', self.video_path,
+                   '-ss', str(start), '-t', str(duration),
+                   '-vn', '-acodec', 'mp3', outfile]
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export {outfile}: {e}")
+
 
 if __name__ == "__main__":
     app = VideoPlayer()
