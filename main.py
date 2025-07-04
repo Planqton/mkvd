@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import vlc
 
 class VideoPlayer(tk.Tk):
@@ -24,6 +24,20 @@ class VideoPlayer(tk.Tk):
                               command=self.on_slider_move)
         self.scale.pack(fill=tk.X)
 
+        # Canvas for draggable segments
+        self.timeline = tk.Canvas(self, height=40, bg='grey90')
+        self.timeline.pack(fill=tk.X)
+        self.timeline.bind('<Button-1>', self.on_timeline_click)
+        self.timeline.bind('<B1-Motion>', self.on_timeline_drag)
+        self.timeline.bind('<ButtonRelease-1>', self.on_timeline_release)
+        self.playhead = self.timeline.create_line(0, 0, 0, 40, fill='red')
+
+        # Segment management
+        self.segments = []  # list of dicts with id, name, start, end, rect
+        self.active_segment = None
+        self.drag_mode = None
+        self.drag_offset = 0
+
         # Control buttons
         controls = tk.Frame(self)
         tk.Button(controls, text="Load", command=self.load_video).pack(side=tk.LEFT)
@@ -33,16 +47,24 @@ class VideoPlayer(tk.Tk):
 
         tk.Button(controls, text="Set Start", command=self.set_start).pack(side=tk.LEFT)
         tk.Button(controls, text="Set End", command=self.set_end).pack(side=tk.LEFT)
+        tk.Button(controls, text="Add Segment", command=self.add_segment).pack(side=tk.LEFT)
+        tk.Button(controls, text="Rename", command=self.rename_segment).pack(side=tk.LEFT)
         controls.pack(fill=tk.X)
 
-        # Segment info
+        # Segment info list
         self.segment_var = tk.StringVar()
         self.segment_label = tk.Label(self, textvariable=self.segment_var)
         self.segment_label.pack(fill=tk.X)
 
+        self.segment_list = tk.Listbox(self)
+        self.segment_list.pack(fill=tk.BOTH, expand=False)
+
         # Segment points
         self.start_point = None
         self.end_point = None
+
+        # timeline width cached for convenience
+        self.timeline_width = 1
 
         # Timer
         self.update_interval = 200
@@ -63,6 +85,12 @@ class VideoPlayer(tk.Tk):
             self.start_point = None
             self.end_point = None
             self.segment_var.set("")
+            # Clear segments
+            for seg in self.segments:
+                if seg['rect']:
+                    self.timeline.delete(seg['rect'])
+            self.segments.clear()
+            self.segment_list.delete(0, tk.END)
         else:
             messagebox.showerror("Error", f"File not found: {path}")
 
@@ -87,11 +115,17 @@ class VideoPlayer(tk.Tk):
             self.player.set_time(int(t / 1000 * length))
 
     def update_ui(self):
-        if self.player.get_media() is not None and self.player.is_playing():
+        if self.player.get_media() is not None:
             length = self.player.get_length()
             if length > 0:
                 pos = self.player.get_time() / length * 1000
                 self.scale.set(pos)
+                x = pos / 1000 * self.timeline_width
+                self.timeline.coords(self.playhead, x, 0, x, 40)
+        # update progress line on timeline
+        self.timeline_width = max(self.timeline.winfo_width(), 1)
+        for seg in self.segments:
+            self.update_segment_rect(seg)
         self.after(self.update_interval, self.update_ui)
 
     def set_start(self):
@@ -117,6 +151,103 @@ class VideoPlayer(tk.Tk):
                 end_sec = self.end_point / 1000
                 msg = f"Segment: {start_sec:.2f}s - {end_sec:.2f}s"
         self.segment_var.set(msg)
+
+    # --- segment management ---
+    def add_segment(self):
+        if self.start_point is None or self.end_point is None:
+            return
+        if self.end_point <= self.start_point:
+            messagebox.showerror("Error", "End must be after start")
+            return
+        seg_id = len(self.segments) + 1
+        name = f"Segment {seg_id}"
+        seg = {
+            'id': seg_id,
+            'name': name,
+            'start': self.start_point,
+            'end': self.end_point,
+            'rect': None,
+        }
+        self.segments.append(seg)
+        self.segment_list.insert(tk.END, f"{seg['id']}: {seg['name']} {seg['start']/1000:.2f}s - {seg['end']/1000:.2f}s")
+        self.draw_segment(seg)
+
+    def rename_segment(self):
+        sel = self.segment_list.curselection()
+        if not sel:
+            return
+        index = sel[0]
+        seg = self.segments[index]
+        new_name = simpledialog.askstring("Rename", "Segment name:", initialvalue=seg['name'])
+        if new_name:
+            seg['name'] = new_name
+            self.update_segment_list()
+
+    def update_segment_list(self):
+        self.segment_list.delete(0, tk.END)
+        for seg in self.segments:
+            self.segment_list.insert(tk.END, f"{seg['id']}: {seg['name']} {seg['start']/1000:.2f}s - {seg['end']/1000:.2f}s")
+
+    def draw_segment(self, seg):
+        x1 = seg['start'] / max(self.player.get_length(), 1) * self.timeline_width
+        x2 = seg['end'] / max(self.player.get_length(), 1) * self.timeline_width
+        rect = self.timeline.create_rectangle(x1, 5, x2, 35, fill='skyblue', outline='blue', tags=f"seg{seg['id']}")
+        seg['rect'] = rect
+
+    def update_segment_rect(self, seg):
+        if seg['rect'] is None:
+            return
+        x1 = seg['start'] / max(self.player.get_length(), 1) * self.timeline_width
+        x2 = seg['end'] / max(self.player.get_length(), 1) * self.timeline_width
+        self.timeline.coords(seg['rect'], x1, 5, x2, 35)
+
+    # --- timeline interaction ---
+    def find_segment_at(self, x):
+        items = self.timeline.find_overlapping(x, 5, x, 35)
+        for item in items:
+            for seg in self.segments:
+                if seg['rect'] == item:
+                    return seg
+        return None
+
+    def on_timeline_click(self, event):
+        seg = self.find_segment_at(event.x)
+        self.active_segment = seg
+        self.drag_mode = None
+        if seg:
+            x1, _, x2, _ = self.timeline.coords(seg['rect'])
+            if abs(event.x - x1) < 5:
+                self.drag_mode = 'resize_left'
+            elif abs(event.x - x2) < 5:
+                self.drag_mode = 'resize_right'
+            else:
+                self.drag_mode = 'move'
+            self.drag_offset = event.x
+
+    def on_timeline_drag(self, event):
+        if not self.active_segment:
+            return
+        delta = event.x - self.drag_offset
+        length = max(self.player.get_length(), 1)
+        px_to_time = length / self.timeline_width
+        if self.drag_mode == 'move':
+            self.active_segment['start'] += delta * px_to_time
+            self.active_segment['end'] += delta * px_to_time
+        elif self.drag_mode == 'resize_left':
+            self.active_segment['start'] += delta * px_to_time
+            if self.active_segment['start'] >= self.active_segment['end']:
+                self.active_segment['start'] = self.active_segment['end'] - 1
+        elif self.drag_mode == 'resize_right':
+            self.active_segment['end'] += delta * px_to_time
+            if self.active_segment['end'] <= self.active_segment['start']:
+                self.active_segment['end'] = self.active_segment['start'] + 1
+        self.drag_offset = event.x
+        self.update_segment_rect(self.active_segment)
+        self.update_segment_list()
+
+    def on_timeline_release(self, event):
+        self.active_segment = None
+        self.drag_mode = None
 
 if __name__ == "__main__":
     app = VideoPlayer()
