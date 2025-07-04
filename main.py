@@ -149,6 +149,10 @@ class VideoPlayer(tk.Tk):
         # allow slider control via arrow keys
         self.bind('<Left>', self.on_key_left)
         self.bind('<Right>', self.on_key_right)
+        # allow scrolling to move the slider
+        self.bind('<MouseWheel>', self.on_mouse_wheel)
+        self.bind('<Button-4>', self.on_mouse_wheel)
+        self.bind('<Button-5>', self.on_mouse_wheel)
 
     def load_video(self):
         path = filedialog.askopenfilename(filetypes=[
@@ -184,8 +188,13 @@ class VideoPlayer(tk.Tk):
             self.player.pause()
 
     def stop(self):
+        if self.player.get_media() is None:
+            return
         self.player.stop()
         self.scale.set(0)
+        # display first frame after stopping
+        self.player.play()
+        self.player.pause()
 
     def on_slider_move(self, value):
         if self.player.get_media() is None:
@@ -194,6 +203,9 @@ class VideoPlayer(tk.Tk):
         if length > 0:
             t = int(float(value))
             self.player.set_time(int(t / 1000 * length))
+            if not self.player.is_playing():
+                self.player.play()
+                self.player.pause()
 
     def update_ui(self):
         if self.player.get_media() is not None:
@@ -461,6 +473,9 @@ class VideoPlayer(tk.Tk):
         self.player.set_time(new_time)
         pos = new_time / length * 1000
         self.scale.set(pos)
+        if not self.player.is_playing():
+            self.player.play()
+            self.player.pause()
 
     def on_key_left(self, event):
         step = self.jump_amount.get()
@@ -469,6 +484,19 @@ class VideoPlayer(tk.Tk):
     def on_key_right(self, event):
         step = self.jump_amount.get()
         self.adjust_time(step)
+
+    def on_mouse_wheel(self, event):
+        if self.exporting or self.player.get_media() is None:
+            return
+        direction = 1
+        if hasattr(event, 'delta') and event.delta != 0:
+            direction = -1 if event.delta > 0 else 1
+        elif getattr(event, 'num', None) == 4:
+            direction = -1
+        elif getattr(event, 'num', None) == 5:
+            direction = 1
+        step = self.jump_amount.get()
+        self.adjust_time(direction * step)
 
 
 if __name__ == "__main__":
