@@ -45,16 +45,43 @@ class VideoPlayer(tk.Tk):
 
         # Control buttons
         controls = tk.Frame(self)
-        tk.Button(controls, text="Load", command=self.load_video).pack(side=tk.LEFT)
-        tk.Button(controls, text="Play", command=self.play).pack(side=tk.LEFT)
-        tk.Button(controls, text="Pause", command=self.pause).pack(side=tk.LEFT)
-        tk.Button(controls, text="Stop", command=self.stop).pack(side=tk.LEFT)
+        self.control_widgets = []
+        self.load_btn = tk.Button(controls, text="Load", command=self.load_video)
+        self.load_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.load_btn)
 
-        tk.Button(controls, text="Set Start", command=self.set_start).pack(side=tk.LEFT)
-        tk.Button(controls, text="Set End", command=self.set_end).pack(side=tk.LEFT)
-        tk.Button(controls, text="Add Segment", command=self.add_segment).pack(side=tk.LEFT)
-        tk.Button(controls, text="Rename", command=self.rename_segment).pack(side=tk.LEFT)
-        tk.Button(controls, text="Export", command=self.export_segments).pack(side=tk.LEFT)
+        self.play_btn = tk.Button(controls, text="Play", command=self.play)
+        self.play_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.play_btn)
+
+        self.pause_btn = tk.Button(controls, text="Pause", command=self.pause)
+        self.pause_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.pause_btn)
+
+        self.stop_btn = tk.Button(controls, text="Stop", command=self.stop)
+        self.stop_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.stop_btn)
+
+        self.start_btn = tk.Button(controls, text="Set Start", command=self.set_start)
+        self.start_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.start_btn)
+
+        self.end_btn = tk.Button(controls, text="Set End", command=self.set_end)
+        self.end_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.end_btn)
+
+        self.add_btn = tk.Button(controls, text="Add Segment", command=self.add_segment)
+        self.add_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.add_btn)
+
+        self.rename_btn = tk.Button(controls, text="Rename", command=self.rename_segment)
+        self.rename_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.rename_btn)
+
+        self.export_btn = tk.Button(controls, text="Export", command=self.export_segments)
+        self.export_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.export_btn)
+
         controls.pack(fill=tk.X)
 
         # Segment info list
@@ -65,8 +92,13 @@ class VideoPlayer(tk.Tk):
         self.segment_list = tk.Listbox(self)
         self.segment_list.pack(fill=tk.BOTH, expand=False)
 
+        # Status during export
+        self.export_status_var = tk.StringVar()
+        self.export_status_label = tk.Label(self, textvariable=self.export_status_var)
+        self.export_status_label.pack(fill=tk.X)
+
         # Log output for ffmpeg
-        self.log_text = ScrolledText(self, height=8, state='disabled')
+        self.log_text = ScrolledText(self, height=12, state='disabled')
         self.log_text.pack(fill=tk.BOTH, expand=False)
         self.log_queue = queue.Queue()
         self.after(100, self.process_log_queue)
@@ -81,6 +113,9 @@ class VideoPlayer(tk.Tk):
         # Timer
         self.update_interval = 200
         self.after(self.update_interval, self.update_ui)
+
+        # flag to disable interactions during export
+        self.exporting = False
 
     def load_video(self):
         path = filedialog.askopenfilename(filetypes=[
@@ -154,14 +189,22 @@ class VideoPlayer(tk.Tk):
             self.log_text.configure(state='disabled')
         self.after(100, self.process_log_queue)
 
+    def set_controls_state(self, enabled: bool):
+        state = tk.NORMAL if enabled else tk.DISABLED
+        for w in self.control_widgets:
+            w.configure(state=state)
+        self.segment_list.configure(state=state)
+        self.scale.configure(state=state)
+        self.exporting = not enabled
+
     def set_start(self):
-        if self.player.get_media() is None:
+        if self.exporting or self.player.get_media() is None:
             return
         self.start_point = self.player.get_time()
         self.update_segment_label()
 
     def set_end(self):
-        if self.player.get_media() is None:
+        if self.exporting or self.player.get_media() is None:
             return
         self.end_point = self.player.get_time()
         self.update_segment_label()
@@ -180,6 +223,8 @@ class VideoPlayer(tk.Tk):
 
     # --- segment management ---
     def add_segment(self):
+        if self.exporting:
+            return
         if self.start_point is None or self.end_point is None:
             return
         if self.end_point <= self.start_point:
@@ -199,6 +244,8 @@ class VideoPlayer(tk.Tk):
         self.draw_segment(seg)
 
     def rename_segment(self):
+        if self.exporting:
+            return
         sel = self.segment_list.curselection()
         if not sel:
             return
@@ -237,6 +284,8 @@ class VideoPlayer(tk.Tk):
         return None
 
     def on_timeline_click(self, event):
+        if self.exporting:
+            return
         seg = self.find_segment_at(event.x)
         self.active_segment = seg
         self.drag_mode = None
@@ -251,7 +300,7 @@ class VideoPlayer(tk.Tk):
             self.drag_offset = event.x
 
     def on_timeline_drag(self, event):
-        if not self.active_segment:
+        if self.exporting or not self.active_segment:
             return
         delta = event.x - self.drag_offset
         length = max(self.player.get_length(), 1)
@@ -272,6 +321,8 @@ class VideoPlayer(tk.Tk):
         self.update_segment_list()
 
     def on_timeline_release(self, event):
+        if self.exporting:
+            return
         self.active_segment = None
         self.drag_mode = None
 
@@ -279,6 +330,8 @@ class VideoPlayer(tk.Tk):
         if not self.video_path or not self.segments:
             messagebox.showinfo("Export", "No segments to export")
             return
+        self.set_controls_state(False)
+        self.export_status_var.set("Starting export...")
         threading.Thread(target=self._export_worker, daemon=True).start()
 
     def _export_worker(self):
@@ -287,8 +340,11 @@ class VideoPlayer(tk.Tk):
         ffmpeg_path = os.path.join(ffmpeg_dir, exe)
         if not os.path.exists(ffmpeg_path):
             self.append_log(f"ffmpeg not found at {ffmpeg_path}\n")
+            self.after(0, lambda: self.export_status_var.set("ffmpeg not found"))
+            self.after(0, lambda: self.set_controls_state(True))
             return
         for seg in self.segments:
+            self.after(0, lambda name=seg['name']: self.export_status_var.set(f"Exporting {name}"))
             start = seg['start'] / 1000
             duration = (seg['end'] - seg['start']) / 1000
             outfile = f"{seg['name']}.mp3"
@@ -303,6 +359,8 @@ class VideoPlayer(tk.Tk):
                 proc.wait()
             except Exception as e:
                 self.append_log(f"Failed to export {outfile}: {e}\n")
+        self.after(0, lambda: self.export_status_var.set("Export finished"))
+        self.after(0, lambda: self.set_controls_state(True))
 
 
 if __name__ == "__main__":

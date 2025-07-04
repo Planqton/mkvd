@@ -31,6 +31,8 @@ an `ffmpeg` directory next to `main.py` containing the `ffmpeg` executable
 (e.g. `ffmpeg/ffmpeg.exe` on Windows).
 
 The ffmpeg output appears in a dedicated log text field at the bottom of the
-window. Scroll if necessary to view the full messages.
+window. The field is fairly tall so longer command output remains readable and
+above it a small status label shows which segment is being exported. While
+export is running all other controls are disabled to prevent changes.
 
 
