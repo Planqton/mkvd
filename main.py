@@ -84,6 +84,14 @@ class VideoPlayer(tk.Tk):
         self.export_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.export_btn)
 
+        tk.Label(controls, text='Jump (s):').pack(side=tk.LEFT)
+        self.jump_amount = tk.DoubleVar(value=1.0)
+        self.jump_spin = tk.Spinbox(controls, from_=0.1, to=60.0,
+                                   increment=0.1, width=5,
+                                   textvariable=self.jump_amount)
+        self.jump_spin.pack(side=tk.LEFT)
+        self.control_widgets.append(self.jump_spin)
+
         controls.pack(fill=tk.X)
 
         # Segment info list
@@ -442,19 +450,25 @@ class VideoPlayer(tk.Tk):
         self.after(0, lambda: self.set_controls_state(True))
 
     # --- keyboard slider control ---
-    def adjust_slider(self, delta):
+    def adjust_time(self, seconds):
         if self.exporting or self.player.get_media() is None:
             return
-        value = self.scale.get()
-        new_value = max(0, min(1000, value + delta))
-        self.scale.set(new_value)
-        self.on_slider_move(float(new_value))
+        length = self.player.get_length()
+        if length <= 0:
+            return
+        current = self.player.get_time()
+        new_time = max(0, min(length, current + int(seconds * 1000)))
+        self.player.set_time(new_time)
+        pos = new_time / length * 1000
+        self.scale.set(pos)
 
     def on_key_left(self, event):
-        self.adjust_slider(-10)
+        step = self.jump_amount.get()
+        self.adjust_time(-step)
 
     def on_key_right(self, event):
-        self.adjust_slider(10)
+        step = self.jump_amount.get()
+        self.adjust_time(step)
 
 
 if __name__ == "__main__":
