@@ -330,11 +330,14 @@ class VideoPlayer(tk.Tk):
         if not self.video_path or not self.segments:
             messagebox.showinfo("Export", "No segments to export")
             return
+        export_dir = filedialog.askdirectory(title="Select Export Folder")
+        if not export_dir:
+            return
         self.set_controls_state(False)
         self.export_status_var.set("Starting export...")
-        threading.Thread(target=self._export_worker, daemon=True).start()
+        threading.Thread(target=self._export_worker, args=(export_dir,), daemon=True).start()
 
-    def _export_worker(self):
+    def _export_worker(self, export_dir):
         ffmpeg_dir = os.path.join(os.path.dirname(__file__), 'ffmpeg')
         exe = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
         ffmpeg_path = os.path.join(ffmpeg_dir, exe)
@@ -343,11 +346,12 @@ class VideoPlayer(tk.Tk):
             self.after(0, lambda: self.export_status_var.set("ffmpeg not found"))
             self.after(0, lambda: self.set_controls_state(True))
             return
+        os.makedirs(export_dir, exist_ok=True)
         for seg in self.segments:
             self.after(0, lambda name=seg['name']: self.export_status_var.set(f"Exporting {name}"))
             start = seg['start'] / 1000
             duration = (seg['end'] - seg['start']) / 1000
-            outfile = f"{seg['name']}.mp3"
+            outfile = os.path.join(export_dir, f"{seg['name']}.mp3")
             cmd = [ffmpeg_path, '-y', '-i', self.video_path,
                    '-ss', str(start), '-t', str(duration),
                    '-vn', '-acodec', 'mp3', outfile]
