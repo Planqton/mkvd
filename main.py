@@ -138,6 +138,10 @@ class VideoPlayer(tk.Tk):
         # flag to disable interactions during export
         self.exporting = False
 
+        # allow slider control via arrow keys
+        self.bind('<Left>', self.on_key_left)
+        self.bind('<Right>', self.on_key_right)
+
     def load_video(self):
         path = filedialog.askopenfilename(filetypes=[
             ("Video Files", "*.mkv *.avi *.mp4")
@@ -436,6 +440,21 @@ class VideoPlayer(tk.Tk):
                 self.append_log(f"Failed to export {outfile}: {e}\n")
         self.after(0, lambda: self.export_status_var.set("Export finished"))
         self.after(0, lambda: self.set_controls_state(True))
+
+    # --- keyboard slider control ---
+    def adjust_slider(self, delta):
+        if self.exporting or self.player.get_media() is None:
+            return
+        value = self.scale.get()
+        new_value = max(0, min(1000, value + delta))
+        self.scale.set(new_value)
+        self.on_slider_move(float(new_value))
+
+    def on_key_left(self, event):
+        self.adjust_slider(-10)
+
+    def on_key_right(self, event):
+        self.adjust_slider(10)
 
 
 if __name__ == "__main__":
