@@ -396,16 +396,28 @@ class VideoPlayer(tk.Tk):
         self.segment_list.selection_set(index)
 
     def draw_segment(self, seg):
-        x1 = seg['start'] / max(self.player.get_length(), 1) * self.timeline_width
-        x2 = seg['end'] / max(self.player.get_length(), 1) * self.timeline_width
+        length = max(self.player.get_length(), 1)
+        x1 = seg['start'] / length * self.timeline_width
+        x2 = seg['end'] / length * self.timeline_width
+        margin = 1
+        if x1 <= 0:
+            x1 = margin
+        if x2 >= self.timeline_width:
+            x2 = self.timeline_width - margin
         rect = self.timeline.create_rectangle(x1, 5, x2, 35, fill='skyblue', outline='blue', tags=f"seg{seg['id']}")
         seg['rect'] = rect
 
     def update_segment_rect(self, seg):
         if seg['rect'] is None:
             return
-        x1 = seg['start'] / max(self.player.get_length(), 1) * self.timeline_width
-        x2 = seg['end'] / max(self.player.get_length(), 1) * self.timeline_width
+        length = max(self.player.get_length(), 1)
+        x1 = seg['start'] / length * self.timeline_width
+        x2 = seg['end'] / length * self.timeline_width
+        margin = 1
+        if x1 <= 0:
+            x1 = margin
+        if x2 >= self.timeline_width:
+            x2 = self.timeline_width - margin
         self.timeline.coords(seg['rect'], x1, 5, x2, 35)
 
     # --- timeline interaction ---
