@@ -7,14 +7,7 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 import threading
 import queue
-import time
-try:
-    import cv2
-except ImportError as e:
-    raise SystemExit(
-        "OpenCV not found. Install it with 'pip install opencv-python'."
-    ) from e
-from PIL import Image, ImageTk
+import vlc
 
 class VideoPlayer(tk.Tk):
     def __init__(self):
@@ -27,22 +20,13 @@ class VideoPlayer(tk.Tk):
             self.style.theme_use('clam')
         except Exception:
             pass
-        # Video playback with OpenCV
-        self.cap = None
-        self.cap_lock = threading.Lock()
-        self.playing = False
-        self.play_thread = None
-        self.photo = None
-        self.image_id = None
-        self.fps = 25
-        self.frame_count = 0
-        self.duration = 0
-        self.current_frame = 0
+        # VLC player instance
+        self.instance = vlc.Instance()
+        self.player = self.instance.media_player_new()
 
         # Video panel
         self.video_panel = tk.Frame(self)
         self.canvas = tk.Canvas(self.video_panel, bg='black')
-        self.image_id = self.canvas.create_image(0, 0, anchor=tk.CENTER)
         self.canvas.pack(fill=tk.BOTH, expand=1)
         self.video_panel.pack(fill=tk.BOTH, expand=1)
 
@@ -182,9 +166,6 @@ class VideoPlayer(tk.Tk):
         # flag to disable interactions during export
         self.exporting = False
 
-        # release resources on close
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
-
         # allow slider control via arrow keys
         self.bind('<Left>', self.on_key_left)
         self.bind('<Right>', self.on_key_right)
@@ -192,6 +173,9 @@ class VideoPlayer(tk.Tk):
         self.bind('<MouseWheel>', self.on_mouse_wheel)
         self.bind('<Button-4>', self.on_mouse_wheel)
         self.bind('<Button-5>', self.on_mouse_wheel)
+
+        # release resources on close
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def load_video(self):
         path = filedialog.askopenfilename(filetypes=[
@@ -201,26 +185,10 @@ class VideoPlayer(tk.Tk):
             return
         self.meta_var.set('')
         if os.path.exists(path):
-            self.pause()
-            if self.cap:
-                with self.cap_lock:
-                    self.cap.release()
-            self.cap = cv2.VideoCapture(path)
-            if not self.cap.isOpened():
-                messagebox.showerror("Error", f"Failed to open: {path}")
-                self.cap = None
-                return
-            with self.cap_lock:
-                self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 25
-                self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                self.duration = (self.frame_count / self.fps) * 1000
-                self.current_frame = 0
-                ret, frame = self.cap.read()
-            if ret:
-                self.current_frame = 1
-                self.display_frame(frame)
-                with self.cap_lock:
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
+            media = self.instance.media_new(path)
+            self.player.set_media(media)
+            self.player.set_hwnd(self.canvas.winfo_id())
+            self.play()
             # Reset segment points
             self.start_point = None
             self.end_point = None
@@ -237,86 +205,39 @@ class VideoPlayer(tk.Tk):
         else:
             messagebox.showerror("Error", f"File not found: {path}")
 
-    def display_frame(self, frame):
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w = frame.shape[:2]
-        cw = max(1, self.canvas.winfo_width())
-        ch = max(1, self.canvas.winfo_height())
-        scale = min(cw / w, ch / h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        if (new_w, new_h) != (w, h):
-            frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        img = ImageTk.PhotoImage(Image.fromarray(frame))
-        self.photo = img
-        self.canvas.itemconfigure(self.image_id, image=img)
-        self.canvas.coords(self.image_id, cw // 2, ch // 2)
-
-    def update_frame(self):
-        if not self.playing or not self.cap:
-            return
-        with self.cap_lock:
-            ret, frame = self.cap.read()
-        if not ret:
-            self.playing = False
-            return
-        with self.cap_lock:
-            self.current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-        self.after(0, lambda f=frame: self.display_frame(f))
-
     def play(self):
-        if not self.cap or self.playing:
-            return
-        self.playing = True
-        self.play_thread = threading.Thread(target=self.play_loop, daemon=True)
-        self.play_thread.start()
+        if self.player.get_media() is not None:
+            self.player.play()
 
-    def play_loop(self):
-        while self.playing and self.cap:
-            start = time.time()
-            self.update_frame()
-            elapsed = time.time() - start
-            delay = max(1.0 / self.fps - elapsed, 0)
-            time.sleep(delay)
     def pause(self):
-        self.playing = False
-        if self.play_thread:
-            self.play_thread.join(timeout=0.1)
-            self.play_thread = None
+        if self.player.is_playing():
+            self.player.pause()
 
     def stop(self):
-        if not self.cap:
+        if self.player.get_media() is None:
             return
-        self.playing = False
-        if self.play_thread:
-            self.play_thread.join(timeout=0.1)
-            self.play_thread = None
-        with self.cap_lock:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ret, frame = self.cap.read()
-        if ret:
-            self.current_frame = 1
-            self.display_frame(frame)
+        self.player.stop()
         self.scale.set(0)
+        # display first frame after stopping
+        self.player.play()
+        self.player.pause()
 
     def on_slider_move(self, value):
-        if not self.cap:
+        if self.player.get_media() is None:
             return
-        if self.frame_count > 0:
-            frame_num = int(float(value) / 1000 * self.frame_count)
-            frame_num = max(0, min(self.frame_count - 1, frame_num))
-            with self.cap_lock:
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-                ret, frame = self.cap.read()
-            if ret:
-                self.current_frame = frame_num + 1
-                self.display_frame(frame)
+        length = self.player.get_length()
+        if length > 0:
+            t = int(float(value))
+            self.player.set_time(int(t / 1000 * length))
+            if not self.player.is_playing():
+                self.player.play()
+                self.player.pause()
 
     def update_ui(self):
-        if self.cap:
-            length = self.duration
+        if self.player.get_media() is not None:
+            length = self.player.get_length()
             if length > 0:
-                pos = (self.current_frame / self.frame_count) * 1000
+                pos = self.player.get_time() / length * 1000
                 self.scale.set(pos)
                 x = pos / 1000 * self.timeline_width
                 self.timeline.coords(self.playhead, x, 0, x, 40)
@@ -368,19 +289,17 @@ class VideoPlayer(tk.Tk):
         self.exporting = not enabled
 
     def set_start(self):
-        if self.exporting or not self.cap:
+        if self.exporting or self.player.get_media() is None:
             return
-        length = self.duration
-        current = self.current_frame / self.fps * 1000
-        self.start_point = max(0, min(current, length))
+        length = self.player.get_length()
+        self.start_point = max(0, min(self.player.get_time(), length))
         self.update_segment_label()
 
     def set_end(self):
-        if self.exporting or not self.cap:
+        if self.exporting or self.player.get_media() is None:
             return
-        length = self.duration
-        current = self.current_frame / self.fps * 1000
-        self.end_point = max(0, min(current, length))
+        length = self.player.get_length()
+        self.end_point = max(0, min(self.player.get_time(), length))
         self.update_segment_label()
 
     def update_segment_label(self):
@@ -406,7 +325,7 @@ class VideoPlayer(tk.Tk):
             return
         seg_id = len(self.segments) + 1
         name = f"Segment {seg_id}"
-        length = self.duration
+        length = self.player.get_length()
         start = max(0, min(self.start_point, length))
         end = max(start + 1, min(self.end_point, length))
         seg = {
@@ -471,7 +390,7 @@ class VideoPlayer(tk.Tk):
         except Exception:
             messagebox.showerror("Error", "Invalid start/end times")
             return
-        length = self.duration
+        length = self.player.get_length()
         seg['start'] = max(0, min(start, length))
         seg['end'] = max(seg['start'] + 1, min(end, length))
         self.update_segment_rect(seg)
@@ -479,7 +398,7 @@ class VideoPlayer(tk.Tk):
         self.segment_list.selection_set(index)
 
     def draw_segment(self, seg):
-        length = max(self.duration, 1)
+        length = max(self.player.get_length(), 1)
         x1 = seg['start'] / length * self.timeline_width
         x2 = seg['end'] / length * self.timeline_width
         margin = 1
@@ -493,7 +412,7 @@ class VideoPlayer(tk.Tk):
     def update_segment_rect(self, seg):
         if seg['rect'] is None:
             return
-        length = max(self.duration, 1)
+        length = max(self.player.get_length(), 1)
         x1 = seg['start'] / length * self.timeline_width
         x2 = seg['end'] / length * self.timeline_width
         margin = 1
@@ -532,7 +451,7 @@ class VideoPlayer(tk.Tk):
         if self.exporting or not self.active_segment:
             return
         delta = event.x - self.drag_offset
-        length = max(self.duration, 1)
+        length = max(self.player.get_length(), 1)
         px_to_time = length / self.timeline_width
         if self.drag_mode == 'move':
             seg_len = self.active_segment['end'] - self.active_segment['start']
@@ -650,22 +569,19 @@ class VideoPlayer(tk.Tk):
 
     # --- keyboard slider control ---
     def adjust_time(self, seconds):
-        if self.exporting or not self.cap:
+        if self.exporting or self.player.get_media() is None:
             return
-        length = self.duration
+        length = self.player.get_length()
         if length <= 0:
             return
-        current = self.current_frame / self.fps * 1000
+        current = self.player.get_time()
         new_time = max(0, min(length, current + int(seconds * 1000)))
-        frame_num = int(new_time / 1000 * self.fps)
-        with self.cap_lock:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-            ret, frame = self.cap.read()
-        if ret:
-            self.current_frame = frame_num + 1
-            self.display_frame(frame)
+        self.player.set_time(new_time)
         pos = new_time / length * 1000
         self.scale.set(pos)
+        if not self.player.is_playing():
+            self.player.play()
+            self.player.pause()
 
     def on_key_left(self, event):
         step = self.jump_amount.get()
@@ -676,7 +592,7 @@ class VideoPlayer(tk.Tk):
         self.adjust_time(step)
 
     def on_mouse_wheel(self, event):
-        if self.exporting or not self.cap:
+        if self.exporting or self.player.get_media() is None:
             return
         direction = 1
         if hasattr(event, 'delta') and event.delta != 0:
@@ -689,13 +605,8 @@ class VideoPlayer(tk.Tk):
         self.adjust_time(direction * step)
 
     def on_close(self):
-        self.playing = False
-        if self.play_thread:
-            self.play_thread.join(timeout=0.1)
-            self.play_thread = None
-        if self.cap:
-            with self.cap_lock:
-                self.cap.release()
+        if self.player:
+            self.player.stop()
         self.destroy()
 
 

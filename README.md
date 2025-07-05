@@ -1,16 +1,12 @@
 # mkvd
 
-This tool provides a simple video player with segment management. It no longer
-requires VLC and instead uses OpenCV and Pillow for video display. Video frames
-are automatically scaled to fit the window while preserving aspect ratio. Video
-playback runs in a background thread to keep the GUI responsive.
-Install the `opencv-python` package (imported in code as `cv2`) and `Pillow`.
-Note that the module is published as `opencv-python`; there is no separate
-`cv2` package:
+This tool uses VLC via the `python-vlc` library to play and trim video segments.
+Install the required dependency with:
 
 ```bash
-pip install opencv-python Pillow
+pip install python-vlc
 ```
 
-Attempting to install a package named `cv2` will fail, as the module is
-distributed under the `opencv-python` name.
+FFmpeg binaries must also be available in the `ffmpeg` folder for exporting
+segments.
+
