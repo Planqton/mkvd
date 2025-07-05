@@ -7,7 +7,8 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 import threading
 import queue
-import vlc
+import cv2
+from PIL import Image, ImageTk
 
 class VideoPlayer(tk.Tk):
     def __init__(self):
@@ -21,13 +22,20 @@ class VideoPlayer(tk.Tk):
         except Exception:
             pass
 #test
-        # VLC player instance
-        self.instance = vlc.Instance()
-        self.player = self.instance.media_player_new()
+        # Video playback with OpenCV
+        self.cap = None
+        self.playing = False
+        self.photo = None
+        self.image_id = None
+        self.fps = 25
+        self.frame_count = 0
+        self.duration = 0
+        self.current_frame = 0
 
         # Video panel
         self.video_panel = tk.Frame(self)
         self.canvas = tk.Canvas(self.video_panel, bg='black')
+        self.image_id = self.canvas.create_image(0, 0, anchor=tk.NW)
         self.canvas.pack(fill=tk.BOTH, expand=1)
         self.video_panel.pack(fill=tk.BOTH, expand=1)
 
@@ -183,10 +191,22 @@ class VideoPlayer(tk.Tk):
             return
         self.meta_var.set('')
         if os.path.exists(path):
-            media = self.instance.media_new(path)
-            self.player.set_media(media)
-            self.player.set_hwnd(self.canvas.winfo_id())
-            self.play()
+            if self.cap:
+                self.cap.release()
+            self.cap = cv2.VideoCapture(path)
+            if not self.cap.isOpened():
+                messagebox.showerror("Error", f"Failed to open: {path}")
+                self.cap = None
+                return
+            self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 25
+            self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.duration = (self.frame_count / self.fps) * 1000
+            self.current_frame = 0
+            ret, frame = self.cap.read()
+            if ret:
+                self.current_frame = 1
+                self.display_frame(frame)
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
             # Reset segment points
             self.start_point = None
             self.end_point = None
@@ -203,39 +223,60 @@ class VideoPlayer(tk.Tk):
         else:
             messagebox.showerror("Error", f"File not found: {path}")
 
+    def display_frame(self, frame):
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = ImageTk.PhotoImage(Image.fromarray(frame))
+        self.photo = img
+        self.canvas.itemconfigure(self.image_id, image=img)
+
+    def update_frame(self):
+        if not self.playing or not self.cap:
+            return
+        ret, frame = self.cap.read()
+        if not ret:
+            self.playing = False
+            return
+        self.current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+        self.display_frame(frame)
+        delay = int(1000 / self.fps)
+        self.after(delay, self.update_frame)
+
     def play(self):
-        if self.player.get_media() is not None:
-            self.player.play()
+        if self.cap:
+            self.playing = True
+            self.update_frame()
 
     def pause(self):
-        if self.player.is_playing():
-            self.player.pause()
+        self.playing = False
 
     def stop(self):
-        if self.player.get_media() is None:
+        if not self.cap:
             return
-        self.player.stop()
+        self.playing = False
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        ret, frame = self.cap.read()
+        if ret:
+            self.current_frame = 1
+            self.display_frame(frame)
         self.scale.set(0)
-        # display first frame after stopping
-        self.player.play()
-        self.player.pause()
 
     def on_slider_move(self, value):
-        if self.player.get_media() is None:
+        if not self.cap:
             return
-        length = self.player.get_length()
-        if length > 0:
-            t = int(float(value))
-            self.player.set_time(int(t / 1000 * length))
-            if not self.player.is_playing():
-                self.player.play()
-                self.player.pause()
+        if self.frame_count > 0:
+            frame_num = int(float(value) / 1000 * self.frame_count)
+            frame_num = max(0, min(self.frame_count - 1, frame_num))
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            ret, frame = self.cap.read()
+            if ret:
+                self.current_frame = frame_num + 1
+                self.display_frame(frame)
 
     def update_ui(self):
-        if self.player.get_media() is not None:
-            length = self.player.get_length()
+        if self.cap:
+            length = self.duration
             if length > 0:
-                pos = self.player.get_time() / length * 1000
+                pos = (self.current_frame / self.frame_count) * 1000
                 self.scale.set(pos)
                 x = pos / 1000 * self.timeline_width
                 self.timeline.coords(self.playhead, x, 0, x, 40)
@@ -287,17 +328,19 @@ class VideoPlayer(tk.Tk):
         self.exporting = not enabled
 
     def set_start(self):
-        if self.exporting or self.player.get_media() is None:
+        if self.exporting or not self.cap:
             return
-        length = self.player.get_length()
-        self.start_point = max(0, min(self.player.get_time(), length))
+        length = self.duration
+        current = self.current_frame / self.fps * 1000
+        self.start_point = max(0, min(current, length))
         self.update_segment_label()
 
     def set_end(self):
-        if self.exporting or self.player.get_media() is None:
+        if self.exporting or not self.cap:
             return
-        length = self.player.get_length()
-        self.end_point = max(0, min(self.player.get_time(), length))
+        length = self.duration
+        current = self.current_frame / self.fps * 1000
+        self.end_point = max(0, min(current, length))
         self.update_segment_label()
 
     def update_segment_label(self):
@@ -323,7 +366,7 @@ class VideoPlayer(tk.Tk):
             return
         seg_id = len(self.segments) + 1
         name = f"Segment {seg_id}"
-        length = self.player.get_length()
+        length = self.duration
         start = max(0, min(self.start_point, length))
         end = max(start + 1, min(self.end_point, length))
         seg = {
@@ -388,7 +431,7 @@ class VideoPlayer(tk.Tk):
         except Exception:
             messagebox.showerror("Error", "Invalid start/end times")
             return
-        length = self.player.get_length()
+        length = self.duration
         seg['start'] = max(0, min(start, length))
         seg['end'] = max(seg['start'] + 1, min(end, length))
         self.update_segment_rect(seg)
@@ -396,7 +439,7 @@ class VideoPlayer(tk.Tk):
         self.segment_list.selection_set(index)
 
     def draw_segment(self, seg):
-        length = max(self.player.get_length(), 1)
+        length = max(self.duration, 1)
         x1 = seg['start'] / length * self.timeline_width
         x2 = seg['end'] / length * self.timeline_width
         margin = 1
@@ -410,7 +453,7 @@ class VideoPlayer(tk.Tk):
     def update_segment_rect(self, seg):
         if seg['rect'] is None:
             return
-        length = max(self.player.get_length(), 1)
+        length = max(self.duration, 1)
         x1 = seg['start'] / length * self.timeline_width
         x2 = seg['end'] / length * self.timeline_width
         margin = 1
@@ -449,7 +492,7 @@ class VideoPlayer(tk.Tk):
         if self.exporting or not self.active_segment:
             return
         delta = event.x - self.drag_offset
-        length = max(self.player.get_length(), 1)
+        length = max(self.duration, 1)
         px_to_time = length / self.timeline_width
         if self.drag_mode == 'move':
             seg_len = self.active_segment['end'] - self.active_segment['start']
@@ -567,19 +610,21 @@ class VideoPlayer(tk.Tk):
 
     # --- keyboard slider control ---
     def adjust_time(self, seconds):
-        if self.exporting or self.player.get_media() is None:
+        if self.exporting or not self.cap:
             return
-        length = self.player.get_length()
+        length = self.duration
         if length <= 0:
             return
-        current = self.player.get_time()
+        current = self.current_frame / self.fps * 1000
         new_time = max(0, min(length, current + int(seconds * 1000)))
-        self.player.set_time(new_time)
+        frame_num = int(new_time / 1000 * self.fps)
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ret, frame = self.cap.read()
+        if ret:
+            self.current_frame = frame_num + 1
+            self.display_frame(frame)
         pos = new_time / length * 1000
         self.scale.set(pos)
-        if not self.player.is_playing():
-            self.player.play()
-            self.player.pause()
 
     def on_key_left(self, event):
         step = self.jump_amount.get()
@@ -590,7 +635,7 @@ class VideoPlayer(tk.Tk):
         self.adjust_time(step)
 
     def on_mouse_wheel(self, event):
-        if self.exporting or self.player.get_media() is None:
+        if self.exporting or not self.cap:
             return
         direction = 1
         if hasattr(event, 'delta') and event.delta != 0:
