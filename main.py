@@ -261,13 +261,15 @@ class VideoPlayer(tk.Tk):
     def set_start(self):
         if self.exporting or self.player.get_media() is None:
             return
-        self.start_point = self.player.get_time()
+        length = self.player.get_length()
+        self.start_point = max(0, min(self.player.get_time(), length))
         self.update_segment_label()
 
     def set_end(self):
         if self.exporting or self.player.get_media() is None:
             return
-        self.end_point = self.player.get_time()
+        length = self.player.get_length()
+        self.end_point = max(0, min(self.player.get_time(), length))
         self.update_segment_label()
 
     def update_segment_label(self):
@@ -293,11 +295,14 @@ class VideoPlayer(tk.Tk):
             return
         seg_id = len(self.segments) + 1
         name = f"Segment {seg_id}"
+        length = self.player.get_length()
+        start = max(0, min(self.start_point, length))
+        end = max(start + 1, min(self.end_point, length))
         seg = {
             'id': seg_id,
             'name': name,
-            'start': self.start_point,
-            'end': self.end_point,
+            'start': start,
+            'end': end,
             'rect': None,
         }
         self.segments.append(seg)
@@ -355,8 +360,9 @@ class VideoPlayer(tk.Tk):
         except Exception:
             messagebox.showerror("Error", "Invalid start/end times")
             return
-        seg['start'] = max(0, start)
-        seg['end'] = max(seg['start'] + 1, end)
+        length = self.player.get_length()
+        seg['start'] = max(0, min(start, length))
+        seg['end'] = max(seg['start'] + 1, min(end, length))
         self.update_segment_rect(seg)
         self.update_segment_list()
         self.segment_list.selection_set(index)
@@ -416,6 +422,8 @@ class VideoPlayer(tk.Tk):
             self.active_segment['end'] += delta * px_to_time
             if self.active_segment['end'] <= self.active_segment['start']:
                 self.active_segment['end'] = self.active_segment['start'] + 1
+        self.active_segment['start'] = max(0, self.active_segment['start'])
+        self.active_segment['end'] = min(length, self.active_segment['end'])
         self.drag_offset = event.x
         self.update_segment_rect(self.active_segment)
         self.update_segment_list()
