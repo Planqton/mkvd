@@ -1,5 +1,6 @@
 import os
 import subprocess
+import json
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from tkinter import ttk
@@ -33,6 +34,11 @@ class VideoPlayer(tk.Tk):
         # show loaded file
         self.video_label = ttk.Label(self, text="No video loaded", anchor='w')
         self.video_label.pack(fill=tk.X, padx=5, pady=(0, 2))
+
+        # metadata display
+        self.meta_var = tk.StringVar()
+        self.meta_label = ttk.Label(self, textvariable=self.meta_var, anchor='w')
+        self.meta_label.pack(fill=tk.X, padx=5, pady=(0, 2))
 
         # Timeline slider
         self.scale = tk.Scale(self, from_=0, to=1000, orient=tk.HORIZONTAL,
@@ -175,6 +181,7 @@ class VideoPlayer(tk.Tk):
         ])
         if not path:
             return
+        self.meta_var.set('')
         if os.path.exists(path):
             media = self.instance.media_new(path)
             self.player.set_media(media)
@@ -192,6 +199,7 @@ class VideoPlayer(tk.Tk):
             self.segment_list.delete(0, tk.END)
             self.video_path = path
             self.video_label.config(text=os.path.basename(path))
+            self.meta_var.set(self.get_metadata(path))
         else:
             messagebox.showerror("Error", f"File not found: {path}")
 
@@ -249,6 +257,26 @@ class VideoPlayer(tk.Tk):
             self.log_text.see(tk.END)
             self.log_text.configure(state='disabled')
         self.after(100, self.process_log_queue)
+
+    def get_metadata(self, path):
+        """Return basic metadata string for the given media file."""
+        ffprobe_dir = os.path.join(os.path.dirname(__file__), 'ffmpeg')
+        exe = 'ffprobe.exe' if os.name == 'nt' else 'ffprobe'
+        ffprobe_path = os.path.join(ffprobe_dir, exe)
+        if not os.path.exists(ffprobe_path):
+            return ''
+        cmd = [ffprobe_path, '-v', 'quiet', '-print_format', 'json',
+               '-show_format', path]
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                                         text=True)
+            data = json.loads(out)
+            tags = data.get('format', {}).get('tags', {})
+            fields = ['title', 'show', 'season_number', 'episode_id']
+            info = [f'{f.capitalize()}: {tags[f]}' for f in fields if f in tags]
+            return ' | '.join(info)
+        except Exception as e:
+            return f'Metadata error: {e}'
 
     def set_controls_state(self, enabled: bool):
         state = tk.NORMAL if enabled else tk.DISABLED
@@ -394,15 +422,8 @@ class VideoPlayer(tk.Tk):
             return
         seg = self.find_segment_at(event.x)
         self.active_segment = seg
-        self.drag_mode = None
+        self.drag_mode = 'move' if seg else None
         if seg:
-            x1, _, x2, _ = self.timeline.coords(seg['rect'])
-            if abs(event.x - x1) < 5:
-                self.drag_mode = 'resize_left'
-            elif abs(event.x - x2) < 5:
-                self.drag_mode = 'resize_right'
-            else:
-                self.drag_mode = 'move'
             self.drag_offset = event.x
 
     def on_timeline_drag(self, event):
@@ -411,19 +432,11 @@ class VideoPlayer(tk.Tk):
         delta = event.x - self.drag_offset
         length = max(self.player.get_length(), 1)
         px_to_time = length / self.timeline_width
-        if self.drag_mode == 'move':
-            self.active_segment['start'] += delta * px_to_time
-            self.active_segment['end'] += delta * px_to_time
-        elif self.drag_mode == 'resize_left':
-            self.active_segment['start'] += delta * px_to_time
-            if self.active_segment['start'] >= self.active_segment['end']:
-                self.active_segment['start'] = self.active_segment['end'] - 1
-        elif self.drag_mode == 'resize_right':
-            self.active_segment['end'] += delta * px_to_time
-            if self.active_segment['end'] <= self.active_segment['start']:
-                self.active_segment['end'] = self.active_segment['start'] + 1
-        self.active_segment['start'] = max(0, self.active_segment['start'])
-        self.active_segment['end'] = min(length, self.active_segment['end'])
+        seg_len = self.active_segment['end'] - self.active_segment['start']
+        new_start = self.active_segment['start'] + delta * px_to_time
+        new_start = max(0, min(length - seg_len, new_start))
+        self.active_segment['start'] = new_start
+        self.active_segment['end'] = new_start + seg_len
         self.drag_offset = event.x
         self.update_segment_rect(self.active_segment)
         self.update_segment_list()
@@ -438,11 +451,7 @@ class VideoPlayer(tk.Tk):
         if self.exporting:
             return
         seg = self.find_segment_at(event.x)
-        cursor = ''
-        if seg:
-            x1, _, x2, _ = self.timeline.coords(seg['rect'])
-            if abs(event.x - x1) < 5 or abs(event.x - x2) < 5:
-                cursor = 'sb_h_double_arrow'
+        cursor = 'fleur' if seg else ''
         self.timeline.config(cursor=cursor)
 
     def export_segments(self):
