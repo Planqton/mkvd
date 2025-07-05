@@ -7,6 +7,7 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 import threading
 import queue
+import time
 try:
     import cv2
 except ImportError as e:
@@ -29,6 +30,7 @@ class VideoPlayer(tk.Tk):
         # Video playback with OpenCV
         self.cap = None
         self.playing = False
+        self.play_thread = None
         self.photo = None
         self.image_id = None
         self.fps = 25
@@ -253,22 +255,35 @@ class VideoPlayer(tk.Tk):
             self.playing = False
             return
         self.current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-        self.display_frame(frame)
-        delay = int(1000 / self.fps)
-        self.after(delay, self.update_frame)
+        self.after(0, lambda f=frame: self.display_frame(f))
 
     def play(self):
-        if self.cap:
-            self.playing = True
-            self.update_frame()
+        if not self.cap or self.playing:
+            return
+        self.playing = True
+        self.play_thread = threading.Thread(target=self.play_loop, daemon=True)
+        self.play_thread.start()
 
+    def play_loop(self):
+        while self.playing and self.cap:
+            start = time.time()
+            self.update_frame()
+            elapsed = time.time() - start
+            delay = max(1.0 / self.fps - elapsed, 0)
+            time.sleep(delay)
     def pause(self):
         self.playing = False
+        if self.play_thread:
+            self.play_thread.join(timeout=0.1)
+            self.play_thread = None
 
     def stop(self):
         if not self.cap:
             return
         self.playing = False
+        if self.play_thread:
+            self.play_thread.join(timeout=0.1)
+            self.play_thread = None
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         ret, frame = self.cap.read()
         if ret:
@@ -664,6 +679,10 @@ class VideoPlayer(tk.Tk):
         self.adjust_time(direction * step)
 
     def on_close(self):
+        self.playing = False
+        if self.play_thread:
+            self.play_thread.join(timeout=0.1)
+            self.play_thread = None
         if self.cap:
             self.cap.release()
         self.destroy()
