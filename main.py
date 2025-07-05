@@ -2,6 +2,7 @@ import os
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 import threading
 import queue
@@ -12,6 +13,12 @@ class VideoPlayer(tk.Tk):
         super().__init__()
         self.title("Video Player with Timeline")
         self.geometry("800x600")
+        # use a nicer ttk theme if available
+        self.style = ttk.Style(self)
+        try:
+            self.style.theme_use('clam')
+        except Exception:
+            pass
 
         # VLC player instance
         self.instance = vlc.Instance()
@@ -22,6 +29,10 @@ class VideoPlayer(tk.Tk):
         self.canvas = tk.Canvas(self.video_panel, bg='black')
         self.canvas.pack(fill=tk.BOTH, expand=1)
         self.video_panel.pack(fill=tk.BOTH, expand=1)
+
+        # show loaded file
+        self.video_label = ttk.Label(self, text="No video loaded", anchor='w')
+        self.video_label.pack(fill=tk.X, padx=5, pady=(0, 2))
 
         # Timeline slider
         self.scale = tk.Scale(self, from_=0, to=1000, orient=tk.HORIZONTAL,
@@ -46,49 +57,53 @@ class VideoPlayer(tk.Tk):
         self.video_path = None
 
         # Control buttons
-        controls = tk.Frame(self)
+        controls = ttk.Frame(self)
         self.control_widgets = []
-        self.load_btn = tk.Button(controls, text="Load", command=self.load_video)
+        self.load_btn = ttk.Button(controls, text="Load", command=self.load_video)
         self.load_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.load_btn)
 
-        self.play_btn = tk.Button(controls, text="Play", command=self.play)
+        self.play_btn = ttk.Button(controls, text="Play", command=self.play)
         self.play_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.play_btn)
 
-        self.pause_btn = tk.Button(controls, text="Pause", command=self.pause)
+        self.pause_btn = ttk.Button(controls, text="Pause", command=self.pause)
         self.pause_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.pause_btn)
 
-        self.stop_btn = tk.Button(controls, text="Stop", command=self.stop)
+        self.stop_btn = ttk.Button(controls, text="Stop", command=self.stop)
         self.stop_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.stop_btn)
 
-        self.start_btn = tk.Button(controls, text="Set Start", command=self.set_start)
+        self.start_btn = ttk.Button(controls, text="Set Start", command=self.set_start)
         self.start_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.start_btn)
 
-        self.end_btn = tk.Button(controls, text="Set End", command=self.set_end)
+        self.end_btn = ttk.Button(controls, text="Set End", command=self.set_end)
         self.end_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.end_btn)
 
-        self.add_btn = tk.Button(controls, text="Add Segment", command=self.add_segment)
+        self.add_btn = ttk.Button(controls, text="Add Segment", command=self.add_segment)
         self.add_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.add_btn)
 
-        self.rename_btn = tk.Button(controls, text="Rename", command=self.rename_segment)
+        self.rename_btn = ttk.Button(controls, text="Rename", command=self.rename_segment)
         self.rename_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.rename_btn)
 
-        self.export_btn = tk.Button(controls, text="Export", command=self.export_segments)
+        self.export_btn = ttk.Button(controls, text="Export", command=self.export_segments)
         self.export_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.export_btn)
 
-        tk.Label(controls, text='Jump (s):').pack(side=tk.LEFT)
+        self.export_full_btn = ttk.Button(controls, text="Export Full", command=self.export_full)
+        self.export_full_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.export_full_btn)
+
+        ttk.Label(controls, text='Jump (s):').pack(side=tk.LEFT)
         self.jump_amount = tk.DoubleVar(value=1.0)
-        self.jump_spin = tk.Spinbox(controls, from_=0.1, to=60.0,
-                                   increment=0.1, width=5,
-                                   textvariable=self.jump_amount)
+        self.jump_spin = ttk.Spinbox(controls, from_=0.1, to=60.0,
+                                     increment=0.1, width=5,
+                                     textvariable=self.jump_amount)
         self.jump_spin.pack(side=tk.LEFT)
         self.control_widgets.append(self.jump_spin)
 
@@ -96,7 +111,7 @@ class VideoPlayer(tk.Tk):
 
         # Segment info list
         self.segment_var = tk.StringVar()
-        self.segment_label = tk.Label(self, textvariable=self.segment_var)
+        self.segment_label = ttk.Label(self, textvariable=self.segment_var)
         self.segment_label.pack(fill=tk.X)
 
         self.segment_list = tk.Listbox(self)
@@ -104,18 +119,18 @@ class VideoPlayer(tk.Tk):
         self.segment_list.bind('<<ListboxSelect>>', self.on_segment_select)
 
         # Entry fields to edit selected segment
-        edit = tk.Frame(self)
-        tk.Label(edit, text='Start:').pack(side=tk.LEFT)
-        self.start_entry = tk.Entry(edit, width=8, state='disabled')
+        edit = ttk.Frame(self)
+        ttk.Label(edit, text='Start:').pack(side=tk.LEFT)
+        self.start_entry = ttk.Entry(edit, width=8, state='disabled')
         self.start_entry.pack(side=tk.LEFT)
         self.control_widgets.append(self.start_entry)
 
-        tk.Label(edit, text='End:').pack(side=tk.LEFT)
-        self.end_entry = tk.Entry(edit, width=8, state='disabled')
+        ttk.Label(edit, text='End:').pack(side=tk.LEFT)
+        self.end_entry = ttk.Entry(edit, width=8, state='disabled')
         self.end_entry.pack(side=tk.LEFT)
         self.control_widgets.append(self.end_entry)
 
-        self.update_btn = tk.Button(edit, text='Update', command=self.update_segment_times, state='disabled')
+        self.update_btn = ttk.Button(edit, text='Update', command=self.update_segment_times, state='disabled')
         self.update_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.update_btn)
 
@@ -123,7 +138,7 @@ class VideoPlayer(tk.Tk):
 
         # Status during export
         self.export_status_var = tk.StringVar()
-        self.export_status_label = tk.Label(self, textvariable=self.export_status_var)
+        self.export_status_label = ttk.Label(self, textvariable=self.export_status_var)
         self.export_status_label.pack(fill=tk.X)
 
         # Log output for ffmpeg
@@ -176,6 +191,7 @@ class VideoPlayer(tk.Tk):
             self.segments.clear()
             self.segment_list.delete(0, tk.END)
             self.video_path = path
+            self.video_label.config(text=os.path.basename(path))
         else:
             messagebox.showerror("Error", f"File not found: {path}")
 
@@ -458,6 +474,41 @@ class VideoPlayer(tk.Tk):
                 proc.wait()
             except Exception as e:
                 self.append_log(f"Failed to export {outfile}: {e}\n")
+        self.after(0, lambda: self.export_status_var.set("Export finished"))
+        self.after(0, lambda: self.set_controls_state(True))
+
+    def export_full(self):
+        if not self.video_path:
+            messagebox.showinfo("Export", "No video loaded")
+            return
+        export_dir = filedialog.askdirectory(title="Select Export Folder")
+        if not export_dir:
+            return
+        self.set_controls_state(False)
+        self.export_status_var.set("Starting export...")
+        threading.Thread(target=self._export_full_worker, args=(export_dir,), daemon=True).start()
+
+    def _export_full_worker(self, export_dir):
+        ffmpeg_dir = os.path.join(os.path.dirname(__file__), 'ffmpeg')
+        exe = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+        ffmpeg_path = os.path.join(ffmpeg_dir, exe)
+        if not os.path.exists(ffmpeg_path):
+            self.append_log(f"ffmpeg not found at {ffmpeg_path}\n")
+            self.after(0, lambda: self.export_status_var.set("ffmpeg not found"))
+            self.after(0, lambda: self.set_controls_state(True))
+            return
+        os.makedirs(export_dir, exist_ok=True)
+        outfile = os.path.join(export_dir, 'full_audio.mp3')
+        cmd = [ffmpeg_path, '-y', '-i', self.video_path,
+               '-vn', '-acodec', 'mp3', outfile]
+        self.append_log("Running: " + " ".join(cmd) + "\n")
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for line in proc.stdout:
+                self.append_log(line)
+            proc.wait()
+        except Exception as e:
+            self.append_log(f"Failed to export {outfile}: {e}\n")
         self.after(0, lambda: self.export_status_var.set("Export finished"))
         self.after(0, lambda: self.set_controls_state(True))
 
