@@ -7,7 +7,12 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 import threading
 import queue
-import cv2
+try:
+    import cv2
+except ImportError as e:
+    raise SystemExit(
+        "OpenCV not found. Install it with 'pip install opencv-python'."
+    ) from e
 from PIL import Image, ImageTk
 
 class VideoPlayer(tk.Tk):
