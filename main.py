@@ -174,6 +174,9 @@ class VideoPlayer(tk.Tk):
         # flag to disable interactions during export
         self.exporting = False
 
+        # release resources on close
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
         # allow slider control via arrow keys
         self.bind('<Left>', self.on_key_left)
         self.bind('<Right>', self.on_key_right)
@@ -645,6 +648,11 @@ class VideoPlayer(tk.Tk):
             direction = 1
         step = self.jump_amount.get()
         self.adjust_time(direction * step)
+
+    def on_close(self):
+        if self.cap:
+            self.cap.release()
+        self.destroy()
 
 
 if __name__ == "__main__":
