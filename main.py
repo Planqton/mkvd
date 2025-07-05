@@ -20,7 +20,7 @@ class VideoPlayer(tk.Tk):
             self.style.theme_use('clam')
         except Exception:
             pass
-
+#test
         # VLC player instance
         self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
