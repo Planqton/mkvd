@@ -37,11 +37,11 @@ class VideoPlayer(tk.Tk):
         # Timeline slider
         self.scale = tk.Scale(self, from_=0, to=1000, orient=tk.HORIZONTAL,
                               command=self.on_slider_move)
-        self.scale.pack(fill=tk.X)
+        self.scale.pack(fill=tk.X, padx=5, pady=(5, 0))
 
         # Canvas for draggable segments
         self.timeline = tk.Canvas(self, height=40, bg='grey90')
-        self.timeline.pack(fill=tk.X)
+        self.timeline.pack(fill=tk.X, padx=5, pady=(0, 5))
         self.timeline.bind('<Button-1>', self.on_timeline_click)
         self.timeline.bind('<B1-Motion>', self.on_timeline_drag)
         self.timeline.bind('<ButtonRelease-1>', self.on_timeline_release)
@@ -112,10 +112,10 @@ class VideoPlayer(tk.Tk):
         # Segment info list
         self.segment_var = tk.StringVar()
         self.segment_label = ttk.Label(self, textvariable=self.segment_var)
-        self.segment_label.pack(fill=tk.X)
+        self.segment_label.pack(fill=tk.X, padx=5, pady=(5, 0))
 
         self.segment_list = tk.Listbox(self)
-        self.segment_list.pack(fill=tk.BOTH, expand=False)
+        self.segment_list.pack(fill=tk.BOTH, expand=False, padx=5, pady=(0, 5))
         self.segment_list.bind('<<ListboxSelect>>', self.on_segment_select)
 
         # Entry fields to edit selected segment
