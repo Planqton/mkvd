@@ -39,7 +39,7 @@ class VideoPlayer(tk.Tk):
         # Video panel
         self.video_panel = tk.Frame(self)
         self.canvas = tk.Canvas(self.video_panel, bg='black')
-        self.image_id = self.canvas.create_image(0, 0, anchor=tk.NW)
+        self.image_id = self.canvas.create_image(0, 0, anchor=tk.CENTER)
         self.canvas.pack(fill=tk.BOTH, expand=1)
         self.video_panel.pack(fill=tk.BOTH, expand=1)
 
@@ -232,9 +232,18 @@ class VideoPlayer(tk.Tk):
 
     def display_frame(self, frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = frame.shape[:2]
+        cw = max(1, self.canvas.winfo_width())
+        ch = max(1, self.canvas.winfo_height())
+        scale = min(cw / w, ch / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        if (new_w, new_h) != (w, h):
+            frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
         img = ImageTk.PhotoImage(Image.fromarray(frame))
         self.photo = img
         self.canvas.itemconfigure(self.image_id, image=img)
+        self.canvas.coords(self.image_id, cw // 2, ch // 2)
 
     def update_frame(self):
         if not self.playing or not self.cap:
