@@ -513,7 +513,8 @@ class VideoPlayer(tk.Tk):
             self.after(0, lambda name=seg['name']: self.export_status_var.set(f"Exporting {name}"))
             start = seg['start'] / 1000
             duration = (seg['end'] - seg['start']) / 1000
-            outfile = os.path.join(export_dir, f"{seg['name']}.mp3")
+            base = os.path.splitext(os.path.basename(self.video_path))[0]
+            outfile = os.path.join(export_dir, f"{base} - {seg['name']}.mp3")
             cmd = [ffmpeg_path, '-y', '-i', self.video_path,
                    '-ss', str(start), '-t', str(duration),
                    '-vn', '-acodec', 'mp3', outfile]
@@ -549,7 +550,8 @@ class VideoPlayer(tk.Tk):
             self.after(0, lambda: self.set_controls_state(True))
             return
         os.makedirs(export_dir, exist_ok=True)
-        outfile = os.path.join(export_dir, 'full_audio.mp3')
+        base = os.path.splitext(os.path.basename(self.video_path))[0]
+        outfile = os.path.join(export_dir, f"{base}.mp3")
         cmd = [ffmpeg_path, '-y', '-i', self.video_path,
                '-vn', '-acodec', 'mp3', outfile]
         self.append_log("Running: " + " ".join(cmd) + "\n")
