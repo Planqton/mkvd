@@ -29,6 +29,7 @@ class VideoPlayer(tk.Tk):
             pass
         # Video playback with OpenCV
         self.cap = None
+        self.cap_lock = threading.Lock()
         self.playing = False
         self.play_thread = None
         self.photo = None
@@ -200,22 +201,26 @@ class VideoPlayer(tk.Tk):
             return
         self.meta_var.set('')
         if os.path.exists(path):
+            self.pause()
             if self.cap:
-                self.cap.release()
+                with self.cap_lock:
+                    self.cap.release()
             self.cap = cv2.VideoCapture(path)
             if not self.cap.isOpened():
                 messagebox.showerror("Error", f"Failed to open: {path}")
                 self.cap = None
                 return
-            self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 25
-            self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            self.duration = (self.frame_count / self.fps) * 1000
-            self.current_frame = 0
-            ret, frame = self.cap.read()
+            with self.cap_lock:
+                self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 25
+                self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                self.duration = (self.frame_count / self.fps) * 1000
+                self.current_frame = 0
+                ret, frame = self.cap.read()
             if ret:
                 self.current_frame = 1
                 self.display_frame(frame)
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
+                with self.cap_lock:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
             # Reset segment points
             self.start_point = None
             self.end_point = None
@@ -250,11 +255,13 @@ class VideoPlayer(tk.Tk):
     def update_frame(self):
         if not self.playing or not self.cap:
             return
-        ret, frame = self.cap.read()
+        with self.cap_lock:
+            ret, frame = self.cap.read()
         if not ret:
             self.playing = False
             return
-        self.current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+        with self.cap_lock:
+            self.current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
         self.after(0, lambda f=frame: self.display_frame(f))
 
     def play(self):
@@ -284,8 +291,9 @@ class VideoPlayer(tk.Tk):
         if self.play_thread:
             self.play_thread.join(timeout=0.1)
             self.play_thread = None
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        ret, frame = self.cap.read()
+        with self.cap_lock:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = self.cap.read()
         if ret:
             self.current_frame = 1
             self.display_frame(frame)
@@ -297,8 +305,9 @@ class VideoPlayer(tk.Tk):
         if self.frame_count > 0:
             frame_num = int(float(value) / 1000 * self.frame_count)
             frame_num = max(0, min(self.frame_count - 1, frame_num))
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-            ret, frame = self.cap.read()
+            with self.cap_lock:
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                ret, frame = self.cap.read()
             if ret:
                 self.current_frame = frame_num + 1
                 self.display_frame(frame)
@@ -649,8 +658,9 @@ class VideoPlayer(tk.Tk):
         current = self.current_frame / self.fps * 1000
         new_time = max(0, min(length, current + int(seconds * 1000)))
         frame_num = int(new_time / 1000 * self.fps)
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-        ret, frame = self.cap.read()
+        with self.cap_lock:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            ret, frame = self.cap.read()
         if ret:
             self.current_frame = frame_num + 1
             self.display_frame(frame)
@@ -684,7 +694,8 @@ class VideoPlayer(tk.Tk):
             self.play_thread.join(timeout=0.1)
             self.play_thread = None
         if self.cap:
-            self.cap.release()
+            with self.cap_lock:
+                self.cap.release()
         self.destroy()
 
 
