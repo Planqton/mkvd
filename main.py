@@ -422,8 +422,15 @@ class VideoPlayer(tk.Tk):
             return
         seg = self.find_segment_at(event.x)
         self.active_segment = seg
-        self.drag_mode = 'move' if seg else None
+        self.drag_mode = None
         if seg:
+            x1, _, x2, _ = self.timeline.coords(seg['rect'])
+            if abs(event.x - x1) < 5:
+                self.drag_mode = 'resize_left'
+            elif abs(event.x - x2) < 5:
+                self.drag_mode = 'resize_right'
+            else:
+                self.drag_mode = 'move'
             self.drag_offset = event.x
 
     def on_timeline_drag(self, event):
@@ -432,11 +439,20 @@ class VideoPlayer(tk.Tk):
         delta = event.x - self.drag_offset
         length = max(self.player.get_length(), 1)
         px_to_time = length / self.timeline_width
-        seg_len = self.active_segment['end'] - self.active_segment['start']
-        new_start = self.active_segment['start'] + delta * px_to_time
-        new_start = max(0, min(length - seg_len, new_start))
-        self.active_segment['start'] = new_start
-        self.active_segment['end'] = new_start + seg_len
+        if self.drag_mode == 'move':
+            seg_len = self.active_segment['end'] - self.active_segment['start']
+            new_start = self.active_segment['start'] + delta * px_to_time
+            new_start = max(0, min(length - seg_len, new_start))
+            self.active_segment['start'] = new_start
+            self.active_segment['end'] = new_start + seg_len
+        elif self.drag_mode == 'resize_left':
+            new_start = self.active_segment['start'] + delta * px_to_time
+            max_start = self.active_segment['end'] - 1
+            self.active_segment['start'] = max(0, min(max_start, new_start))
+        elif self.drag_mode == 'resize_right':
+            new_end = self.active_segment['end'] + delta * px_to_time
+            min_end = self.active_segment['start'] + 1
+            self.active_segment['end'] = max(min_end, min(length, new_end))
         self.drag_offset = event.x
         self.update_segment_rect(self.active_segment)
         self.update_segment_list()
@@ -451,7 +467,13 @@ class VideoPlayer(tk.Tk):
         if self.exporting:
             return
         seg = self.find_segment_at(event.x)
-        cursor = 'fleur' if seg else ''
+        cursor = ''
+        if seg:
+            x1, _, x2, _ = self.timeline.coords(seg['rect'])
+            if abs(event.x - x1) < 5 or abs(event.x - x2) < 5:
+                cursor = 'sb_h_double_arrow'
+            else:
+                cursor = 'fleur'
         self.timeline.config(cursor=cursor)
 
     def export_segments(self):
