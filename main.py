@@ -21,7 +21,6 @@ class VideoPlayer(tk.Tk):
             self.style.theme_use('clam')
         except Exception:
             pass
-#test
         # Video playback with OpenCV
         self.cap = None
         self.playing = False
