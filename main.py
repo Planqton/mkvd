@@ -105,6 +105,11 @@ class VideoPlayer(tk.Tk):
         self.export_full_btn.pack(side=tk.LEFT)
         self.control_widgets.append(self.export_full_btn)
 
+        # Batch conversion of multiple files to mp3
+        self.batch_btn = ttk.Button(controls, text="Batch Convert", command=self.batch_convert)
+        self.batch_btn.pack(side=tk.LEFT)
+        self.control_widgets.append(self.batch_btn)
+
         ttk.Label(controls, text='Jump (s):').pack(side=tk.LEFT)
         self.jump_amount = tk.DoubleVar(value=1.0)
         self.jump_spin = ttk.Spinbox(controls, from_=0.1, to=60.0,
@@ -563,6 +568,45 @@ class VideoPlayer(tk.Tk):
         except Exception as e:
             self.append_log(f"Failed to export {outfile}: {e}\n")
         self.after(0, lambda: self.export_status_var.set("Export finished"))
+        self.after(0, lambda: self.set_controls_state(True))
+
+    def batch_convert(self):
+        files = filedialog.askopenfilenames(title="Select Videos",
+                                            filetypes=[("Video Files", "*.mkv *.mp4 *.avi")])
+        if not files:
+            return
+        export_dir = filedialog.askdirectory(title="Select Output Folder")
+        if not export_dir:
+            return
+        self.set_controls_state(False)
+        self.export_status_var.set("Starting batch convert...")
+        threading.Thread(target=self._batch_convert_worker,
+                         args=(files, export_dir), daemon=True).start()
+
+    def _batch_convert_worker(self, files, export_dir):
+        ffmpeg_dir = os.path.join(os.path.dirname(__file__), 'ffmpeg')
+        exe = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+        ffmpeg_path = os.path.join(ffmpeg_dir, exe)
+        if not os.path.exists(ffmpeg_path):
+            self.append_log(f"ffmpeg not found at {ffmpeg_path}\n")
+            self.after(0, lambda: self.export_status_var.set("ffmpeg not found"))
+            self.after(0, lambda: self.set_controls_state(True))
+            return
+        os.makedirs(export_dir, exist_ok=True)
+        for path in files:
+            base = os.path.splitext(os.path.basename(path))[0]
+            outfile = os.path.join(export_dir, f"{base}.mp3")
+            cmd = [ffmpeg_path, '-y', '-i', path, '-vn', '-acodec', 'mp3', outfile]
+            self.append_log("Running: " + " ".join(cmd) + "\n")
+            try:
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT, text=True)
+                for line in proc.stdout:
+                    self.append_log(line)
+                proc.wait()
+            except Exception as e:
+                self.append_log(f"Failed to convert {path}: {e}\n")
+        self.after(0, lambda: self.export_status_var.set("Batch convert finished"))
         self.after(0, lambda: self.set_controls_state(True))
 
     # --- keyboard slider control ---
